@@ -1,0 +1,70 @@
+#!/bin/bash
+######################################
+## This script compiles and uploads ##
+## an arduino sketch without the    ##
+## the need of the Arduino GUI      ##
+######################################
+
+## IMPORTANT: Edit these two variables accordingly
+# Default FQBN and port name for Arduino Nano (ATmega328P with old bootloader)
+fqbn="arduino:avr:nano:cpu=atmega328old"
+port_name="/dev/ttyUSB0"
+
+# Check if the required tools are installed
+if ! command -v arduino-cli &>/dev/null; then
+  echo "[!] Arduino CLI is not installed. Please install it and try again."
+  exit 1
+fi
+
+# Help message
+display_help() {
+  echo "Usage: $0 [OPTIONS] <sketch_directory>"
+  echo "Options:"
+  echo "  -b, --burn   Upload the sketch after compilation"
+  echo "  -h, --help   Display this help message"
+  exit 0
+}
+
+
+# Parse command line arguments
+upload=false
+
+while [[ $# -gt 0 ]]; do
+  key="$1"
+
+  case $key in
+    -b|--burn)
+      upload=true
+      shift
+      ;;
+    -h|--help)
+      display_help
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Check if the sketch directory is provided
+if [ -z "$1" ]; then
+  echo "[!] Please provide the directory containing the Arduino sketch."
+  display_help
+fi
+
+sketch_directory="$1"
+
+# Change to the sketch directory
+cd "$sketch_directory" || exit 1
+
+# Compile the Arduino sketch
+echo "[+] Compiling sketch..."
+arduino-cli compile --fqbn "$fqbn" .
+
+# Upload the compiled sketch if the '-b' or '--burn' option is set
+if [ "$upload" = true ]; then
+  echo "[+] Uploading sketch to board $fqbn on port $port_name"
+  arduino-cli upload -p "$port_name" --fqbn "$fqbn"
+fi
+
+cd ..
