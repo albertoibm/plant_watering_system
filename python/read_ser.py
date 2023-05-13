@@ -22,6 +22,7 @@ with open(output_file, 'w') as file:
             timestamp, value = line.split(',')  # Split timestamp and value
             file.write(f'{timestamp},{value}\n')  # Write data to file
             file.flush()  # Flush buffer to ensure immediate write
+        time.sleep(100)
 
 # Close the serial port
 ser.close()
