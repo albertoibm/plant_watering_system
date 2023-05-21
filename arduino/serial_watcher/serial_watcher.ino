@@ -2,6 +2,7 @@
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("Starting program.");
 }
 
 void loop() {
@@ -16,5 +17,5 @@ void loop() {
   Serial.print(",");
   Serial.println(sensorValue);
 
-  delay(1000); // Delay for 1 second
+  delay(1000); // Delay for 1 minute
 }
