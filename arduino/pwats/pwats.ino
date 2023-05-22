@@ -1,5 +1,5 @@
 #include <math.h>
-#define INTERVAL 60*1000
+#define INTERVAL 30*1000
 #define MAXPOTS 10
 bool verbose = true;
 int potCount = 0;
@@ -13,6 +13,7 @@ class Pot {
     int diameter = 0; // Diameter of the pot in centimeters
     int moistureValue = 0;
     int accWater = 0;
+    unsigned long timeTag = 0;
     Pot *next;
 
     Pot(int moistureSensorPin, int relayPin, int dryThreshold, int diam) {
@@ -55,16 +56,28 @@ class Pot {
       return tim;
     }
     void doWater(int water) {
-      int tim = calculateTime(water);
-      if (verbose){
-        Serial.print("Watering for ");
-        Serial.print(tim);
-        Serial.println(" ms.");
+      unsigned long timePassed = millis() - timeTag;
+      if (timeTag == 0 || timePassed > (1000*3600*24)){ // A day has passed or it's the first time?
+        timeTag = millis();  // Reset timetag
+        accWater = 0; // and water given this day
       }
-      digitalWrite(relayPin, HIGH);// Turn on the pump
-      delay(tim);
-      digitalWrite(relayPin, LOW);// Turn off the pump
-      accWater += water; // Integrate water given
+      
+      if (accWater+water < (volume * 0.1)) {
+        int tim = calculateTime(water);
+        if (verbose){
+          Serial.print("Watering for ");
+          Serial.print(tim);
+          Serial.println(" ms.");
+        }
+        digitalWrite(relayPin, HIGH);// Turn on the pump
+        delay(tim);
+        digitalWrite(relayPin, LOW);// Turn off the pump
+        accWater += water; // Integrate water given
+      } else {
+        Serial.print("Cannot give more than 10% of the pot's volume ");
+        Serial.print((int)((double)volume * 0.1));
+        Serial.println(" ml in water in a single day");
+      }
     }
     void readMoisture() {
       moistureValue = analogRead(moistureSensorPin);
@@ -101,7 +114,51 @@ void addPot(int moistureSensorPin, int relayPin, int dryThreshold, int diameter)
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW); // Turn off the pump at the beginning
 }
+bool validateCommand(const String& command, int expectedArgs) {
+    int numArgs = 0;
+    int commaIndex = command.indexOf(',');
+    int startIndex = (commaIndex != -1) ? commaIndex + 1 : 0;
 
+    for (int i = startIndex; i < command.length(); i++) {
+        if (command.charAt(i) == ',') {
+            numArgs++;
+        }
+    }
+
+    // Add 1 to account for the command itself
+    numArgs++;
+    // Add 1 to account for the first comma
+    if (startIndex) numArgs++;
+
+    if (numArgs != expectedArgs) {
+      Serial.println("Wrong number of arguments");
+      Serial.print("Expected: ");
+      Serial.print(expectedArgs);
+      Serial.print(", received: ");
+      Serial.println(numArgs); 
+      return false;
+    }
+
+    for (int i = startIndex; i < command.length(); i++) {
+        if (command.charAt(i) == ',' || isDigit(command.charAt(i))) {
+            continue;
+        } else {
+          Serial.print("Found wrong character in command: (");
+          Serial.print(command.charAt(i));
+          Serial.println(")"); 
+          return false;
+        }
+    }
+
+    // Check if the last character is a comma
+    if (command.charAt(command.length() - 1) == ',') {
+      Serial.println("Last char is a comma");
+        return false;
+    }
+
+    return true;
+} 
+ 
 void processSerialCommands() {
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
@@ -112,7 +169,7 @@ void processSerialCommands() {
     // Add pot with specified moisture sensor pin, relay pin, and dry threshold
     // Command format: "add,analogPin,digitalPin,dryThreshold,diameter"
     // ADD COMMAND
-    if (command.startsWith("add")) {
+    if (command.startsWith("add") && validateCommand(command, 5)) {
       int analogPin = command.substring(4, command.indexOf(',', 4)).toInt();
       int digitalPin = command.substring(command.indexOf(',', 4) + 1, command.lastIndexOf(',')).toInt();
       int dryThreshold = command.substring(command.lastIndexOf(',', command.lastIndexOf(',') - 1) + 1, command.lastIndexOf(',')).toInt();
@@ -127,7 +184,7 @@ void processSerialCommands() {
       Serial.print(", diameter: ");
       Serial.println(diameter);
     // READ COMMAND
-    } else if (command.startsWith("read")) {
+    } else if (command.startsWith("read") && validateCommand(command, 2)) {
       // This command asks for the details of the pot with PotID = id
       int id = command.substring(5).toInt(); // Extract PotID from the command
 
@@ -165,7 +222,7 @@ void processSerialCommands() {
         Serial.println("Pot not found.");
       }
     // MOIST COMMAND
-    } else if (command.startsWith("moist")) {
+    } else if (command.startsWith("moist") && validateCommand(command, 2)) {
       // This command asks for the moisture level of the pot with PotID = id
       int id = command.substring(5).toInt(); // Extract PotID from the command
   
@@ -190,7 +247,7 @@ void processSerialCommands() {
         Serial.println("Pot not found.");
       }
       // DELETE COMMAND
-    } else if (command.startsWith("del")) {
+    } else if (command.startsWith("del") && validateCommand(command, 2)) {
     // This command deletes a pot
       int id = command.substring(4).toInt(); // Extract PotID from the command
     
@@ -228,11 +285,38 @@ void processSerialCommands() {
         Serial.print(id);
         Serial.println(" not found.");
       }
+    // HEAD COMMAND
+    } else if (command.startsWith("head") && validateCommand(command, 1)) {
+      // This command asks for the pot Id of the head pot (first in the list) 
+  
+      Pot *currentPot = head;
+      if (currentPot == nullptr) {
+        Serial.println("Pot not found.");
+      } else {
+        Serial.print("PotID:");
+        Serial.println(currentPot->potId);
+      }
+      // If pot is not found, send an error message
+      // WATER COMMAND
+    } else if (command.startsWith("water") && validateCommand(command, 3)) {
+      Serial.println("Watering...");
+      int potId = command.substring(6, command.indexOf(',', 6)).toInt();
+      int volume = command.substring(command.indexOf(',', 6) + 1).toInt();
+      Pot *currentPot = head;
+      while (currentPot != nullptr) {
+          if (currentPot->potId == potId) {
+              currentPot->doWater(volume);
+              break;
+          }
+          currentPot = currentPot->next;
+      }
     } else if (command.startsWith("help")) {
       // Print help instructions
       Serial.println("Available commands:");
       Serial.println("- add,analogPin,digitalPin,dryThreshold,diameter: Add a new pot with the specified parameters");
       Serial.println("- read,PotID: Read the details of the pot with the specified PotID");
+      Serial.println("- moist,PotID: Read the details moisture level of the pot with the specified PotID");
+      Serial.println("- water,PotID,volume: Water the pot with the specified PotID with 'volume' ml.");
       Serial.println("- help: Show this help message");
     }
   }
@@ -243,7 +327,7 @@ void setup() {
   Serial.println("Plant watering system.");
   Serial.println("Starting program.");
   // Add initial pots here if needed, e.g.:
-  // addPot(A0, 3, 700, 29);
+  // addPot(0, 3, 700, 29);
 }
 
 void loop() {
@@ -255,9 +339,11 @@ void loop() {
     currentPot = currentPot->next;
     readPots++;
   }
-  unsigned long timeTag = millis();
-  while (millis() - timeTag < INTERVAL){ // Check the soil moisture every INTERVAL seconds
-    delay(100); // wait 100ms  
+  unsigned long cycleTime = millis();
+  while (millis() - cycleTime < INTERVAL){ // Check the soil moisture every INTERVAL seconds
+    delay(300); // wait 300ms  
     processSerialCommands();
+    //Serial.print(".");
   }
+  //Serial.println("End loop()");
 }
