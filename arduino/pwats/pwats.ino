@@ -1,6 +1,6 @@
 #include <math.h>
-#define INTERVAL 30*1000
-#define MAXPOTS 10
+#define INTERVAL (60000UL) // 1 minute
+#define MAXPOTS (10)
 bool verbose = true;
 int potCount = 0;
 class Pot {
@@ -57,7 +57,15 @@ class Pot {
     }
     void doWater(int water) {
       unsigned long timePassed = millis() - timeTag;
-      if (timeTag == 0 || timePassed > (1000*3600*24)){ // A day has passed or it's the first time?
+      if ((timeTag == 0) || (timePassed > (86400000UL))){ // A day has passed or it's the first time?
+        if (verbose) {
+          Serial.print("24h passed since start of watering timeslot. Resetting.");
+//          Serial.print(timePassed);
+//          Serial.print(" > ");
+//          Serial.println(86400000);
+//          Serial.print("Timetag = ");
+//          Serial.println(timeTag);
+        }
         timeTag = millis();  // Reset timetag
         accWater = 0; // and water given this day
       }
@@ -158,7 +166,167 @@ bool validateCommand(const String& command, int expectedArgs) {
 
     return true;
 } 
- 
+void processAddCommand(const String& command) {
+    // ADD COMMAND
+  int analogPin = command.substring(4, command.indexOf(',', 4)).toInt();
+  int digitalPin = command.substring(command.indexOf(',', 4) + 1, command.lastIndexOf(',')).toInt();
+  int dryThreshold = command.substring(command.lastIndexOf(',', command.lastIndexOf(',') - 1) + 1, command.lastIndexOf(',')).toInt();
+  int diameter = command.substring(command.lastIndexOf(',') + 1).toInt();
+  addPot(analogPin, digitalPin, dryThreshold, diameter);
+  Serial.print("Added pot with sensor pin: ");
+  Serial.print(analogPin);
+  Serial.print(", relay pin: ");
+  Serial.print(digitalPin);
+  Serial.print(", dry threshold: ");
+  Serial.print(dryThreshold);
+  Serial.print(", diameter: ");
+  Serial.println(diameter);
+}
+
+void processReadCommand(const String& command) {
+    // READ COMMAND
+  int id = command.substring(5).toInt(); // Extract PotID from the command
+
+  Pot *currentPot = head;
+  while (currentPot != nullptr) {
+    if (currentPot->potId == id) {
+      // Pot found, send its details over Serial
+      Serial.print("PotID: ");
+      Serial.println(currentPot->potId);
+      Serial.print("Moisture: ");
+      Serial.println(currentPot->moistureValue);
+      Serial.print("Moisture Sensor Pin: ");
+      Serial.println(currentPot->moistureSensorPin);
+      Serial.print("Water given [ml]: ");
+      Serial.println(currentPot->accWater);
+      Serial.print("Relay Pin: ");
+      Serial.println(currentPot->relayPin);
+      Serial.print("Dry Threshold: ");
+      Serial.println(currentPot->dryThreshold);
+      Serial.print("Volume: ");
+      Serial.print(currentPot->volume);
+      Serial.println(" ml");
+      Serial.print("Diameter: ");
+      Serial.print(currentPot->diameter);
+      Serial.println(" cm");
+
+      break; // Exit the loop after finding the pot
+    }
+
+    currentPot = currentPot->next;
+  }
+
+  // If pot is not found, send an error message
+  if (currentPot == nullptr) {
+    Serial.println("Pot not found.");
+  }
+}
+void processMoistCommand(const String& command) {
+    // MOIST COMMAND
+  int id = command.substring(5).toInt(); // Extract PotID from the command
+
+  Pot *currentPot = head;
+  while (currentPot != nullptr) {
+    if (currentPot->potId == id) {
+      currentPot->readMoisture();
+      // Pot found, send its details over Serial
+      Serial.print("PotID:");
+      Serial.print(currentPot->potId);
+      Serial.print(",Moisture:");
+      Serial.println(currentPot->moistureValue);
+
+      break; // Exit the loop after finding the pot
+    }
+
+    currentPot = currentPot->next;
+  }
+
+  // If pot is not found, send an error message
+  if (currentPot == nullptr) {
+    Serial.println("Pot not found.");
+  }
+}
+void processDelCommand(const String& command) {
+      // DELETE COMMAND
+  int id = command.substring(4).toInt(); // Extract PotID from the command
+  Pot* currentPot = head;
+  Pot* previousPot = nullptr;
+
+  // Traverse the linked list to find the pot with the given potId
+  while (currentPot != nullptr) {
+    if (currentPot->potId == id) {
+      // Pot with matching potId found, remove it from the list
+      if (previousPot == nullptr) {
+        // If the pot to be removed is the head, update the head pointer
+        head = currentPot->next;
+      } else {
+        // If the pot to be removed is not the head, update the next pointer of the previous pot
+        previousPot->next = currentPot->next;
+      }
+      delete currentPot; // Free the memory allocated for the pot
+      if (verbose) {
+        Serial.print("Pot with Pot ID ");
+        Serial.print(id);
+        Serial.println(" deleted.");
+      }
+      return;
+    }
+
+    // Move to the next pot
+    previousPot = currentPot;
+    currentPot = currentPot->next;
+  }
+
+  // Pot with the given potId not found
+  if (verbose) {
+    Serial.print("Pot with Pot ID ");
+    Serial.print(id);
+    Serial.println(" not found.");
+  }
+}
+void processHeadCommand(const String& command) {
+    // HEAD COMMAND
+  Pot *currentPot = head;
+  if (currentPot == nullptr) {
+    Serial.println("Head:-1");
+  } else {
+    Serial.print("Head:");
+    Serial.println(currentPot->potId);
+    }
+}
+void processNextCommand(const String& command) {
+    // NEXT COMMAND
+  int potId = command.substring(5).toInt(); // Extract potId from the command
+
+  Pot *currentPot = head;
+  while (currentPot != nullptr) {
+    if (currentPot->potId == potId && currentPot->next != nullptr) {
+      // Found the current pot and it has a next pot
+      Serial.print("Next:");
+      Serial.println(currentPot->next->potId);
+      break;
+    }
+    currentPot = currentPot->next;
+  }
+  // If no next pot found or the current pot is the last pot, send an indication (e.g., -1) through the serial port
+  if (currentPot == nullptr || currentPot->next == nullptr) {
+    Serial.println("Next:-1");
+    }
+}
+void processWaterCommand(const String& command) {
+      // WATER COMMAND
+  Serial.println("Watering...");
+  int potId = command.substring(6, command.indexOf(',', 6)).toInt();
+  int volume = command.substring(command.indexOf(',', 6) + 1).toInt();
+  Pot *currentPot = head;
+  while (currentPot != nullptr) {
+      if (currentPot->potId == potId) {
+          currentPot->doWater(volume);
+          break;
+      }
+      currentPot = currentPot->next;
+    }
+}
 void processSerialCommands() {
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
@@ -166,157 +334,38 @@ void processSerialCommands() {
       Serial.print("Received command: ");
       Serial.println(command);
     }
-    // Add pot with specified moisture sensor pin, relay pin, and dry threshold
-    // Command format: "add,analogPin,digitalPin,dryThreshold,diameter"
-    // ADD COMMAND
     if (command.startsWith("add") && validateCommand(command, 5)) {
-      int analogPin = command.substring(4, command.indexOf(',', 4)).toInt();
-      int digitalPin = command.substring(command.indexOf(',', 4) + 1, command.lastIndexOf(',')).toInt();
-      int dryThreshold = command.substring(command.lastIndexOf(',', command.lastIndexOf(',') - 1) + 1, command.lastIndexOf(',')).toInt();
-      int diameter = command.substring(command.lastIndexOf(',') + 1).toInt();
-      addPot(analogPin, digitalPin, dryThreshold, diameter);
-      Serial.print("Added pot with sensor pin: ");
-      Serial.print(analogPin);
-      Serial.print(", relay pin: ");
-      Serial.print(digitalPin);
-      Serial.print(", dry threshold: ");
-      Serial.print(dryThreshold);
-      Serial.print(", diameter: ");
-      Serial.println(diameter);
-    // READ COMMAND
+      // Add pot with specified moisture sensor pin, relay pin, and dry threshold
+      // Command format: "add,analogPin,digitalPin,dryThreshold,diameter"
+      processAddCommand(command);
     } else if (command.startsWith("read") && validateCommand(command, 2)) {
       // This command asks for the details of the pot with PotID = id
-      int id = command.substring(5).toInt(); // Extract PotID from the command
-
-      Pot *currentPot = head;
-      while (currentPot != nullptr) {
-        if (currentPot->potId == id) {
-          // Pot found, send its details over Serial
-          Serial.print("PotID: ");
-          Serial.println(currentPot->potId);
-          Serial.print("Moisture: ");
-          Serial.println(currentPot->moistureValue);
-          Serial.print("Moisture Sensor Pin: ");
-          Serial.println(currentPot->moistureSensorPin);
-          Serial.print("Water given [ml]: ");
-          Serial.println(currentPot->accWater);
-          Serial.print("Relay Pin: ");
-          Serial.println(currentPot->relayPin);
-          Serial.print("Dry Threshold: ");
-          Serial.println(currentPot->dryThreshold);
-          Serial.print("Volume: ");
-          Serial.print(currentPot->volume);
-          Serial.println(" ml");
-          Serial.print("Diameter: ");
-          Serial.print(currentPot->diameter);
-          Serial.println(" cm");
-
-          break; // Exit the loop after finding the pot
-        }
-
-        currentPot = currentPot->next;
-      }
-
-      // If pot is not found, send an error message
-      if (currentPot == nullptr) {
-        Serial.println("Pot not found.");
-      }
-    // MOIST COMMAND
+      processReadCommand(command);
     } else if (command.startsWith("moist") && validateCommand(command, 2)) {
       // This command asks for the moisture level of the pot with PotID = id
-      int id = command.substring(5).toInt(); // Extract PotID from the command
-  
-      Pot *currentPot = head;
-      while (currentPot != nullptr) {
-        if (currentPot->potId == id) {
-          currentPot->readMoisture();
-          // Pot found, send its details over Serial
-          Serial.print("PotID:");
-          Serial.print(currentPot->potId);
-          Serial.print(",Moisture:");
-          Serial.println(currentPot->moistureValue);
-  
-          break; // Exit the loop after finding the pot
-        }
-  
-        currentPot = currentPot->next;
-      }
-  
-      // If pot is not found, send an error message
-      if (currentPot == nullptr) {
-        Serial.println("Pot not found.");
-      }
-      // DELETE COMMAND
+      processMoistCommand(command);
     } else if (command.startsWith("del") && validateCommand(command, 2)) {
     // This command deletes a pot
-      int id = command.substring(4).toInt(); // Extract PotID from the command
-    
-      Pot* currentPot = head;
-      Pot* previousPot = nullptr;
-    
-      // Traverse the linked list to find the pot with the given potId
-      while (currentPot != nullptr) {
-        if (currentPot->potId == id) {
-          // Pot with matching potId found, remove it from the list
-          if (previousPot == nullptr) {
-            // If the pot to be removed is the head, update the head pointer
-            head = currentPot->next;
-          } else {
-            // If the pot to be removed is not the head, update the next pointer of the previous pot
-            previousPot->next = currentPot->next;
-          }
-          delete currentPot; // Free the memory allocated for the pot
-          if (verbose) {
-            Serial.print("Pot with Pot ID ");
-            Serial.print(id);
-            Serial.println(" deleted.");
-          }
-          return;
-        }
-    
-        // Move to the next pot
-        previousPot = currentPot;
-        currentPot = currentPot->next;
-      }
-    
-      // Pot with the given potId not found
-      if (verbose) {
-        Serial.print("Pot with Pot ID ");
-        Serial.print(id);
-        Serial.println(" not found.");
-      }
-    // HEAD COMMAND
+      processDelCommand(command);
     } else if (command.startsWith("head") && validateCommand(command, 1)) {
       // This command asks for the pot Id of the head pot (first in the list) 
-  
-      Pot *currentPot = head;
-      if (currentPot == nullptr) {
-        Serial.println("Pot not found.");
-      } else {
-        Serial.print("PotID:");
-        Serial.println(currentPot->potId);
-      }
-      // If pot is not found, send an error message
-      // WATER COMMAND
+      processHeadCommand(command);
+    } else if (command.startsWith("next") && validateCommand(command, 2)) {
+      // This command asks for the next pot after potId
+      processNextCommand(command);
     } else if (command.startsWith("water") && validateCommand(command, 3)) {
-      Serial.println("Watering...");
-      int potId = command.substring(6, command.indexOf(',', 6)).toInt();
-      int volume = command.substring(command.indexOf(',', 6) + 1).toInt();
-      Pot *currentPot = head;
-      while (currentPot != nullptr) {
-          if (currentPot->potId == potId) {
-              currentPot->doWater(volume);
-              break;
-          }
-          currentPot = currentPot->next;
-      }
+      // This command waters a pot directly without checking for humidity
+      processWaterCommand(command);
     } else if (command.startsWith("help")) {
       // Print help instructions
       Serial.println("Available commands:");
       Serial.println("- add,analogPin,digitalPin,dryThreshold,diameter: Add a new pot with the specified parameters");
+      Serial.println("- del,PotID: Delete the pot with the specified PotID");
       Serial.println("- read,PotID: Read the details of the pot with the specified PotID");
       Serial.println("- moist,PotID: Read the details moisture level of the pot with the specified PotID");
       Serial.println("- water,PotID,volume: Water the pot with the specified PotID with 'volume' ml.");
+      Serial.println("- head: Get the PotID of the pot in the head position of the lsit");
+      Serial.println("- next,PotID: Get the PotID of the next pot relative to the specified PotID");
       Serial.println("- help: Show this help message");
     }
   }
@@ -333,17 +382,21 @@ void setup() {
 void loop() {
   Pot *currentPot = head;
   int readPots = 0;
+  int counter = 0;
   Serial.println("Checking pots..");
   while (currentPot != nullptr && readPots < MAXPOTS) {
-    currentPot->checkAndWater();
+    //currentPot->checkAndWater();
     currentPot = currentPot->next;
     readPots++;
   }
   unsigned long cycleTime = millis();
   while (millis() - cycleTime < INTERVAL){ // Check the soil moisture every INTERVAL seconds
-    delay(300); // wait 300ms  
+    delay(200); // wait 300ms  
     processSerialCommands();
     //Serial.print(".");
+    //if (counter % 50 == 0)
+    //  Serial.println("10s");
+    counter++;
   }
   //Serial.println("End loop()");
 }
