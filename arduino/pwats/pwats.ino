@@ -14,6 +14,7 @@ class Pot {
     int moistureValue = 0;
     int accWater = 0;
     unsigned long timeTag = 0;
+    double a = 0.012752, b = -12.982;
     Pot *next;
 
     Pot(int moistureSensorPin, int relayPin, int dryThreshold, int diam) {
@@ -43,34 +44,13 @@ class Pot {
       } else {
         water = volume * 0.01; // Give 1% of pot's volume. TODO include level of humidity
       }
-      if (verbose) {
-        Serial.print("Give ");
-        Serial.print(water);
-        Serial.println(" ml");
-      }
       return water;
     }
     int calculateTime(int water) {
-      double a = 0.0202436, b = -14.75791673;
       int tim = max(0, (int)(((double)water - b) / a));
       return tim;
     }
     void doWater(int water) {
-      unsigned long timePassed = millis() - timeTag;
-      if ((timeTag == 0) || (timePassed > (86400000UL))){ // A day has passed or it's the first time?
-        if (verbose) {
-          Serial.print("24h passed since start of watering timeslot. Resetting.");
-//          Serial.print(timePassed);
-//          Serial.print(" > ");
-//          Serial.println(86400000);
-//          Serial.print("Timetag = ");
-//          Serial.println(timeTag);
-        }
-        timeTag = millis();  // Reset timetag
-        accWater = 0; // and water given this day
-      }
-      
-      if (accWater+water < (volume * 0.1)) {
         int tim = calculateTime(water);
         if (verbose){
           Serial.print("Watering for ");
@@ -80,12 +60,6 @@ class Pot {
         digitalWrite(relayPin, HIGH);// Turn on the pump
         delay(tim);
         digitalWrite(relayPin, LOW);// Turn off the pump
-        accWater += water; // Integrate water given
-      } else {
-        Serial.print("Cannot give more than 10% of the pot's volume ");
-        Serial.print((int)((double)volume * 0.1));
-        Serial.println(" ml in water in a single day");
-      }
     }
     void readMoisture() {
       moistureValue = analogRead(moistureSensorPin);
@@ -96,14 +70,40 @@ class Pot {
       int water;
       readMoisture();
       Serial.print("Moisture Level (");
-      Serial.print(moistureSensorPin);
+      Serial.print(potId);
       Serial.print("): ");
       Serial.println(moistureValue);
 
       if (moistureValue < dryThreshold) {
         if (verbose) Serial.println("Plant is dry");
         water = calculateWater();
-        doWater(water);
+        unsigned long timePassed = millis() - timeTag;
+        if ((timeTag == 0) || (timePassed > (86400000UL))){ // A day has passed or it's the first time?
+          if (verbose) {
+            Serial.print("24h passed since start of watering timeslot. Resetting.");
+  //          Serial.print(timePassed);
+  //          Serial.print(" > ");
+  //          Serial.println(86400000);
+  //          Serial.print("Timetag = ");
+  //          Serial.println(timeTag);
+          }
+          timeTag = millis();  // Reset timetag
+          accWater = 0; // and reset water given this day
+        }
+        
+        if (accWater+water < (volume * 0.1)) {
+          if (verbose) {
+            Serial.print("Give ");
+            Serial.print(water);
+            Serial.println(" ml");
+          }
+          doWater(water);
+          accWater += water; // Integrate water given
+        } else {
+          Serial.print("Cannot give more than 10% of the pot's volume ");
+          Serial.print((int)((double)volume * 0.1));
+          Serial.println(" ml in water in a single day");
+        }
       }
     }
 };
@@ -382,10 +382,10 @@ void setup() {
 void loop() {
   Pot *currentPot = head;
   int readPots = 0;
-  int counter = 0;
+  static int counter = 0;
   Serial.println("Checking pots..");
   while (currentPot != nullptr && readPots < MAXPOTS) {
-    //currentPot->checkAndWater();
+    currentPot->checkAndWater();
     currentPot = currentPot->next;
     readPots++;
   }
