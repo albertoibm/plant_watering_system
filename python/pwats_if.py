@@ -1,6 +1,11 @@
 import time
 import serial
 import threading
+import re
+import matplotlib.pyplot as plt
+
+
+potsHumidity = {}
 
 class PwatsIf:
     def __init__(self, serial_port):
@@ -8,10 +13,13 @@ class PwatsIf:
         self.running = False
         self.ser = None
         self.serial_thread = None
+        self.startTime = time.time()
 
     def open(self):
         self.ser = serial.Serial(self.serial_port, 9600)  # Replace with the real serial port and baud rate
 
+    def getCurrTime(self):
+        return time.time() - self.startTime
     def read_serial(self):
         # Open the serial port
         self.open()
@@ -24,7 +32,15 @@ class PwatsIf:
                 print(data)
 
                 # React to the incoming data (placeholder)
-                if data.startswith('Moisture'):
+                if data.startswith('Moisture Level'):
+                    pattern = r"\((\d+)\):\s+(\d+)"
+                    matches = re.findall(pattern, text)
+                    if matches:
+                        # Extract the first and second integer values
+                        potid = int(matches[0][0])
+                        moisture = int(matches[0][1])
+                        timTag = self.getCurrTime()
+                        potsMoisture.setdefault(potid, []).append((timTag, moisture))
                     # Perform actions for reading moisture level
                     pass
             time.sleep(0.05)
@@ -75,6 +91,26 @@ class PwatsIf:
         command = f"water,{pot_id},{water_volume}\n"
         self.ser.write(command.encode())
 
+def make_plots():
+    for potId, values in potsHumidity.items():
+        timTags = [entry[0] for entry in values]
+        moistureValues = [entry[1] for entry in values]
+
+        # Plotting the moisture values against time tags
+        plt.plot(timTags, moistureValues)
+
+        # Add labels and title
+        plt.xlabel('Time')
+        plt.ylabel('Moisture')
+        plt.title(f"Pot {potId}")
+
+        # Save the plot as an image file
+        plt.savefig("../images/plots/moisture_pot{potId}.png")
+
+        # Close the plot
+        plt.close()
+
+
 # Create an instance of PwatsIf
 pwats_if = PwatsIf('/dev/ttyUSB0')  # Replace with your actual serial port
 
@@ -87,7 +123,10 @@ try:
         user_input = input('> ')
 
         # Split the user input into command and arguments
-        command, *args = user_input.split()
+        try:
+            command, *args = user_input.split()
+        except:
+            continue
 
         # Evaluate the command and call the corresponding function
         if command == 'add':
@@ -136,6 +175,9 @@ try:
                     print('Invalid number of arguments for water command.')
             else:
                 print('Invalid number of arguments for water command.')
+        elif command == 'plot':
+            # Plot the humidity graph with the collected data
+            make_plots()
         elif command == 'exit':
             # Stop the PwatsIf instance and break the loop
             pwats_if.stop()

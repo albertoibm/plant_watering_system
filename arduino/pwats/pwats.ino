@@ -376,7 +376,7 @@ void setup() {
   Serial.println("Plant watering system.");
   Serial.println("Starting program.");
   // Add initial pots here if needed, e.g.:
-  // addPot(0, 3, 700, 29);
+  addPot(0, 3, 700, 29);
 }
 
 void loop() {
@@ -391,7 +391,7 @@ void loop() {
   }
   unsigned long cycleTime = millis();
   while (millis() - cycleTime < INTERVAL){ // Check the soil moisture every INTERVAL seconds
-    delay(200); // wait 300ms  
+    delay(200); // wait 200ms  
     processSerialCommands();
     //Serial.print(".");
     //if (counter % 50 == 0)
